@@ -59,6 +59,6 @@ fig, axlist = mpf.plot(
     returnfig=True
 )
 
-fig.savefig("/home/vinoth/Project/titan_alpha_telegram_bot/charts/test_tradingview.png", dpi=120, facecolor='#0a0e17')
+fig.savefig("/home/vinoth/Project/rupeestreet_bot/charts/test_tradingview.png", dpi=120, facecolor='#0a0e17')
 plt.close(fig)
-print("Saved TradingView style chart:", os.path.getsize("/home/vinoth/Project/titan_alpha_telegram_bot/charts/test_tradingview.png"), "bytes")
+print("Saved TradingView style chart:", os.path.getsize("/home/vinoth/Project/rupeestreet_bot/charts/test_tradingview.png"), "bytes")
