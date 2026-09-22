@@ -1002,11 +1002,16 @@ async def post_init(application):
         logger.warning(f"Could not set bot commands: {e}")
 
 
+class ReusableThreadingServer(socketserver.ThreadingTCPServer):
+    allow_reuse_address = True
+    daemon_threads = True
+
+
 def run_health_server():
     """Multi-channel HTTP server: Render Health Check + Meta WhatsApp Webhook."""
     port = int(os.environ.get("PORT", 8080))
 
-    class MultiChannelServer(http.server.SimpleHTTPRequestHandler):
+    class MultiChannelServer(http.server.BaseHTTPRequestHandler):
         def do_GET(self):
             parsed = urllib.parse.urlparse(self.path)
             path = parsed.path
@@ -1037,7 +1042,7 @@ def run_health_server():
             self.send_response(200)
             self.send_header("Content-type", "text/plain")
             self.end_headers()
-            self.wfile.write(b"RupeeStreet Master OS is running 24/7 (Telegram + WhatsApp)!")
+            self.wfile.write(b"RupeeStreet Master OS is running 24/7 (Telegram + WhatsApp)!\n")
 
         def do_POST(self):
             parsed = urllib.parse.urlparse(self.path)
@@ -1071,12 +1076,16 @@ def run_health_server():
         def log_message(self, format, *args):
             return  # Silence health check ping logs
 
-    try:
-        with socketserver.TCPServer(("", port), MultiChannelServer) as httpd:
-            logger.info(f"Cloud health & WhatsApp webhook server listening on port {port}")
+    import time
+    for attempt in range(10):
+        try:
+            httpd = ReusableThreadingServer(("", port), MultiChannelServer)
+            logger.info(f"✅ Cloud health & WhatsApp webhook server listening on port {port}")
             httpd.serve_forever()
-    except Exception as e:
-        logger.warning(f"Could not bind webhook server on port {port}: {e}")
+            break
+        except Exception as e:
+            logger.warning(f"Could not bind webhook server on port {port} (attempt {attempt+1}/10): {e}")
+            time.sleep(1)
 
 
 def main():
