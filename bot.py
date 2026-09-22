@@ -3,6 +3,8 @@ import datetime
 import sys
 import os
 import re
+import json
+import urllib.parse
 import threading
 import http.server
 import socketserver
@@ -27,6 +29,7 @@ import today_engine
 import macro_news_engine
 import commodities_engine
 import market_status_engine
+import whatsapp_engine
 
 # Setup logging
 logging.basicConfig(
@@ -1000,25 +1003,80 @@ async def post_init(application):
 
 
 def run_health_server():
-    """Lightweight HTTP health check server for cloud platforms (Render, Railway, Fly)."""
+    """Multi-channel HTTP server: Render Health Check + Meta WhatsApp Webhook."""
     port = int(os.environ.get("PORT", 8080))
 
-    class HealthHandler(http.server.SimpleHTTPRequestHandler):
+    class MultiChannelServer(http.server.SimpleHTTPRequestHandler):
         def do_GET(self):
+            parsed = urllib.parse.urlparse(self.path)
+            path = parsed.path
+            query = urllib.parse.parse_qs(parsed.query)
+
+            # Meta WhatsApp Webhook Verification handshake
+            if path in ("/whatsapp", "/webhook"):
+                mode = query.get("hub.mode", [""])[0]
+                token = query.get("hub.verify_token", [""])[0]
+                challenge = query.get("hub.challenge", [""])[0]
+                expected_token = os.environ.get("WHATSAPP_VERIFY_TOKEN", "rupeestreet_verify_2026")
+
+                if mode == "subscribe" and token == expected_token:
+                    logger.info("✅ Meta WhatsApp Webhook verified successfully!")
+                    self.send_response(200)
+                    self.send_header("Content-type", "text/plain")
+                    self.end_headers()
+                    self.wfile.write(challenge.encode("utf-8"))
+                    return
+                else:
+                    logger.warning("❌ Meta WhatsApp Webhook verification token mismatch.")
+                    self.send_response(403)
+                    self.end_headers()
+                    self.wfile.write(b"Verification token mismatch")
+                    return
+
+            # Default Health check response for Render / UptimeRobot
             self.send_response(200)
             self.send_header("Content-type", "text/plain")
             self.end_headers()
-            self.wfile.write(b"RupeeStreet Master OS is running 24/7!")
+            self.wfile.write(b"RupeeStreet Master OS is running 24/7 (Telegram + WhatsApp)!")
+
+        def do_POST(self):
+            parsed = urllib.parse.urlparse(self.path)
+            path = parsed.path
+
+            if path in ("/whatsapp", "/webhook"):
+                content_len = int(self.headers.get("Content-Length", 0))
+                post_body = self.rfile.read(content_len)
+
+                # Return 200 OK immediately to Meta (must respond within 3 seconds)
+                self.send_response(200)
+                self.send_header("Content-type", "text/plain")
+                self.end_headers()
+                self.wfile.write(b"EVENT_RECEIVED")
+
+                # Process message asynchronously in background thread
+                try:
+                    data = json.loads(post_body.decode("utf-8"))
+                    threading.Thread(
+                        target=whatsapp_engine.handle_meta_webhook_event,
+                        args=(data,),
+                        daemon=True
+                    ).start()
+                except Exception as e:
+                    logger.error(f"Error parsing incoming WhatsApp POST payload: {e}")
+                return
+
+            self.send_response(404)
+            self.end_headers()
 
         def log_message(self, format, *args):
             return  # Silence health check ping logs
 
     try:
-        with socketserver.TCPServer(("", port), HealthHandler) as httpd:
-            logger.info(f"Cloud health check server listening on port {port}")
+        with socketserver.TCPServer(("", port), MultiChannelServer) as httpd:
+            logger.info(f"Cloud health & WhatsApp webhook server listening on port {port}")
             httpd.serve_forever()
     except Exception as e:
-        logger.warning(f"Could not bind health check server on port {port}: {e}")
+        logger.warning(f"Could not bind webhook server on port {port}: {e}")
 
 
 def main():
