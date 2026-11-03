@@ -15,3 +15,14 @@ __pycache__/
 *.db
 *.log
 charts/
+
+..__pycache__/
+*.py[cod]
+venv/
+.env
+*.db
+*.sqlite3
+titan_execution.db
+.pytest_cache/
+.coverage
+
